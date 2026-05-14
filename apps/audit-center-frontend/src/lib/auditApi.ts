@@ -23,6 +23,7 @@ export interface Finding {
 export interface Evidence {
   id: string | number;
   filename: string;
+  file_name?: string;
   sha256: string;
   timestamp: string;
   storage_uri: string;
@@ -116,6 +117,27 @@ const mockScans: Scan[] = [
   },
 ];
 
+
+function normalizeEvidence(e: any): Evidence {
+  return {
+    ...e,
+    filename: e.filename ?? e.file_name ?? "unnamed-evidence",
+  };
+}
+
+function normalizeScan(s: any): Scan {
+  return {
+    ...s,
+    target: s.target ?? mockTargets.find((t) => t.id === s.target_id),
+    risk_score: s.risk_score ?? 0,
+    findings: s.findings ?? [],
+    evidence: (s.evidence ?? []).map(normalizeEvidence),
+    onchain_verifications: s.onchain_verifications ?? [],
+  };
+}
+
+let cachedScans: Scan[] = mockScans.map(normalizeScan);
+
 let useMock = false;
 export const isMockMode = () => useMock;
 const subs = new Set<(v: boolean) => void>();
@@ -159,47 +181,61 @@ export async function createTarget(t: Omit<Target, "id" | "created_at">): Promis
 }
 
 export async function listScans(): Promise<Scan[]> {
-  // Backend has no list endpoint specified; mock-friendly aggregator
   try {
-    return await req<Scan[]>("/scans");
+    const data = await req<any[]>("/scans");
+    cachedScans = data.map(normalizeScan);
+    return cachedScans;
   } catch {
     setMock(true);
-    return mockScans.map(s => ({ ...s, target: mockTargets.find(t => t.id === s.target_id) }));
+    cachedScans = mockScans.map(normalizeScan);
+    return cachedScans;
   }
 }
 
 export async function createScan(target_id: number): Promise<Scan> {
-  try { return await req<Scan>("/scans", { method: "POST", body: JSON.stringify({ target_id }) }); }
-  catch {
+  try {
+    const data = await req<any>("/scans", { method: "POST", body: JSON.stringify({ target_id }) });
+    const ns = normalizeScan(data);
+    cachedScans = [ns, ...cachedScans.filter((s) => s.id !== ns.id)];
+    return ns;
+  } catch {
     setMock(true);
-    const ns: Scan = {
+    const ns: Scan = normalizeScan({
       id: Math.max(0, ...mockScans.map(x => x.id)) + 1,
       target_id,
       target: mockTargets.find(t => t.id === target_id),
       started_at: new Date().toISOString(),
       completed_at: null,
       status: "running",
-      risk_score: 0, findings: [], evidence: [], onchain_verifications: [],
-    };
+      risk_score: 0,
+      findings: [],
+      evidence: [],
+      onchain_verifications: [],
+    });
     mockScans.unshift(ns);
+    cachedScans = [ns, ...cachedScans];
     return ns;
   }
 }
 
 export async function getScan(id: number): Promise<Scan | undefined> {
-  try { return await req<Scan>(`/scans/${id}`); }
-  catch {
+  try {
+    const data = await req<any>(`/scans/${id}`);
+    const normalized = normalizeScan(data);
+    cachedScans = [normalized, ...cachedScans.filter((s) => s.id !== normalized.id)];
+    return normalized;
+  } catch {
     setMock(true);
-    const s = mockScans.find(x => x.id === id);
-    return s ? { ...s, target: mockTargets.find(t => t.id === s.target_id) } : undefined;
+    const s = cachedScans.find(x => x.id === id) ?? mockScans.find(x => x.id === id);
+    return s ? normalizeScan(s) : undefined;
   }
 }
 
 export function allEvidence(): (Evidence & { scan_id: number })[] {
-  return mockScans.flatMap(s => s.evidence.map(e => ({ ...e, scan_id: s.id })));
+  return cachedScans.flatMap(s => s.evidence.map(e => ({ ...normalizeEvidence(e), scan_id: s.id })));
 }
 export function allOnchain(): (OnchainVerification & { scan_id: number })[] {
-  return mockScans.flatMap(s => s.onchain_verifications.map(o => ({ ...o, scan_id: s.id })));
+  return cachedScans.flatMap(s => s.onchain_verifications.map(o => ({ ...o, scan_id: s.id })));
 }
 
 export function formatDate(iso?: string | null) {
