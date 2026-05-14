@@ -1,0 +1,39 @@
+version: "3.8"
+
+services:
+audit_db:
+image: postgres:15
+container_name: singulai_audit_db
+environment:
+POSTGRES_DB: singulai_audit_db
+POSTGRES_USER: audit_user
+POSTGRES_PASSWORD: audit_pass
+volumes:
+- audit_db_data:/var/lib/postgresql/data
+networks:
+- audit_net
+
+audit_app:
+build:
+context: .
+dockerfile: Dockerfile
+container_name: singulai_audit_app
+environment:
+DATABASE_URL: postgresql+asyncpg://audit_user:audit_pass@audit_db:5432/singulai_audit_db
+ports:
+- "8000:8000"
+depends_on:
+- audit_db
+networks:
+- audit_net
+volumes:
+- ./evidence:/app/evidence
+- ./reports:/app/reports
+- ./logs:/app/logs
+
+volumes:
+audit_db_data:
+
+networks:
+audit_net:
+driver: bridge
