@@ -70,6 +70,25 @@ async def list_targets(session: AsyncSession = Depends(get_session)) -> list[Aud
     result = await session.scalars(select(AuditTarget).order_by(AuditTarget.id.desc()))
     return [AuditTargetSchema.model_validate(target) for target in result.all()]
 
+
+@app.get("/scans", response_model=List[ScanDetail])
+async def list_scans(session: AsyncSession = Depends(get_session)) -> list[ScanDetail]:
+    query = (
+        select(AuditScan)
+        .order_by(AuditScan.id.desc())
+        .options(
+            selectinload(AuditScan.target),
+            selectinload(AuditScan.findings),
+            selectinload(AuditScan.evidence),
+            selectinload(AuditScan.onchain_verifications),
+        )
+    )
+
+    result = await session.scalars(query)
+
+    return [ScanDetail.model_validate(scan) for scan in result.all()]
+
+
 @app.post("/scans", response_model=AuditScanSchema, status_code=status.HTTP_201_CREATED)
 async def create_scan(
     scan_in: AuditScanCreate,

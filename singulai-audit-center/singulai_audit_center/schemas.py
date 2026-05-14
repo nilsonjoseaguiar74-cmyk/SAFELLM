@@ -64,6 +64,7 @@ class OnchainVerification(BaseModel):
     timestamp: datetime.datetime
 
 class ScanDetail(AuditScan):
+    target: Optional[AuditTarget] = None
     findings: list[AuditFinding] = []
     evidence: list[AuditEvidence] = []
     onchain_verifications: list[OnchainVerification] = []
